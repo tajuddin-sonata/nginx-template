@@ -1,73 +1,99 @@
 pipeline {
-    agent any
-
-    parameters{
-        choice(name: 'ENVIRONMENT', choices:[
-            'dev',
-            'staging',
-            'prod'],
-            description: 'Choose which environment to deploy to.')
-        string(name: 'AZURE_FUNCTION_APP_NAME', defaultValue: 'jenkins-wf-configure', description: 'The name of FunctionApp to deploy')
-        string(name: 'RESOURCE_GROUP_NAME', defaultValue: 'CCA-DEV', description: 'Azure Resource Group in which the FunctionApp need to deploy')
-        string(name: 'FUNC_STORAGE_ACCOUNT_NAME', defaultValue: 'ccadevfunctionappstgacc', description: 'select the existing Storage account name for Func App or create new')
-        string(name: 'REGION', defaultValue: 'CentralIndia', description: 'Region to Deploy to.')
-        choice(name: 'SKU', choices:[
-            'B1', 'B2', 'B3', 
-            'S1','S2', 'S3', 
-            'P1V3','P2V3', 'P3V3'], 
-            description: 'ASP SKU.')
-        choice(name: 'PYTHON_RUNTIME_VERSION', choices:[
-            '3.9',
-            '3.10',
-            '3.11'],
-            description: 'Python runtime version.')
+    agent {
+        label 'jenkins-slave'
     }
 
-    environment {
-        AZURE_CLIENT_ID = credentials('azurerm_client_id')
-        AZURE_CLIENT_SECRET = credentials('azurerm_client_secret')
-        AZURE_TENANT_ID = credentials('azurerm_tenant_id')
-        ZIP_FILE_NAME = "function_code.zip"
+    parameters {
+        string(name: 'TEMPLATE_FILE_NAME', defaultValue: '', description: '''Template File Name
+        dev-nginx-template.conf
+        butterfly-nginx-template.conf
+        ''')
+
+        string(name: 'MODIFIED_FILE_NAME', defaultValue: '', description: '''Template File Name
+        dev.conf
+        butterfly.conf''')
+
+        string(name: 'SERVER_NAME', defaultValue: '', description: '''Server Name
+        dev-cca.cloud.247-inc.net
+        dev-cca-247ci-butterfly.cloud.247-inc.net dev-cca-247ci-bjs.cloud.247-inc.net 247ci-bjs-dev-internal.cloud.247-inc.net 247ci-omni-dev-internal.cloud.247-inc.net
+        ''')
+
+        string(name: 'ROOT_DIRECTORY', defaultValue: '', description: '''Root Directory
+        /opt/247ci-butterfly-dev-frontend
+        /opt/247ci-dev-dev-frontend
+        ''')
+
+        string(name: 'API_FORWARD_PORT', defaultValue: '', description: '''API Forwarded-Port
+        80
+        ''')
+
+        string(name: 'API_PROXY_PASS', defaultValue: '', description: '''API Proxy Pass
+        http://127.0.0.1:9089/api/
+        http://127.0.0.1:9088/api/
+        ''')
+        
+        string(name: 'AUTH_FORWARD_PORT', defaultValue: '', description: '''AUTH Forwarded-Port
+        80
+        ''')
+
+        string(name: 'AUTH_PROXY_PASS', defaultValue: '', description: '''AUTH Proxy Pass
+        https://sso-247-inc.oktapreview.com/oauth2/aus14la6k8dMmd8pn0h8
+        https://sso-247-inc.oktapreview.com/oauth2/aus14la6k8dMmd8pn0h8
+        ''')
+
+        string(name: 'TARGET_SERVER_DNS', defaultValue: '', description: '''Target server DNS or IP 
+        20.40.49.121
+        ''')
+
+        string(name: 'TARGET_PATH', defaultValue: '', description: '''Target server path to deploy the code
+        /etc/nginx/proxy-confs/
+        ''')
+
+        string(name: 'USER_NAME', defaultValue: '', description: '''Username of Target server.
+        root
+        ''')
     }
+
+    // environment {
+    //     TEMPLATE_FILE = "${params.TEMPLATE_FILE_NAME}"
+    //     MODIFIED_FILE = "${params.MODIFIED_FILE_NAME}"
+    // }
 
     stages {
 
         stage('Checkout') {
             steps {
-                git branch: 'feature/wf_configure', url: 'https://github.com/tajuddin-sonata/v1_model.git'
-                // Install Pip
-                sh 'sudo yum install -y python3-pip'
-
-                // Install project dependencies
-                sh 'pip3 install -r requirements.txt -t .'
+                git branch: 'master', url: 'https://github.com/tajuddin-sonata/nginx-template.git'
             }
         }
 
-        stage('Package Code') {
-            steps {
-                sh "zip -r ${ZIP_FILE_NAME} ."
-            }
-        }
-
-        stage('Create FunctionApp') {
-            steps {
-                // Create ASP for functionApp
-                sh "az login --service-principal -u $AZURE_CLIENT_ID -p $AZURE_CLIENT_SECRET --tenant $AZURE_TENANT_ID"
-                sh "az appservice plan create --name ${params.AZURE_FUNCTION_APP_NAME}-plan --resource-group ${params.RESOURCE_GROUP_NAME} --sku ${params.SKU} --is-linux --location ${params.REGION}"
-                
-                // Create FunctionApp
-                sh "az functionapp create --name ${params.AZURE_FUNCTION_APP_NAME} --resource-group ${params.RESOURCE_GROUP_NAME} --plan ${params.AZURE_FUNCTION_APP_NAME}-plan --runtime python --runtime-version ${params.PYTHON_RUNTIME_VERSION} --functions-version 4 --storage-account ${params.FUNC_STORAGE_ACCOUNT_NAME}"
-            }
-        }
-
-        stage('Deploy to Azure Function App') {
+        stage('Generate Nginx Config') {
             steps {
                 script {
-                    // Azure CLI commands to deploy the function code
-                    sh "az login --service-principal -u $AZURE_CLIENT_ID -p $AZURE_CLIENT_SECRET --tenant $AZURE_TENANT_ID"
-                    sh "az functionapp deployment source config-zip --src ${ZIP_FILE_NAME} --name ${params.AZURE_FUNCTION_APP_NAME} --resource-group ${params.RESOURCE_GROUP_NAME}"
+                    def template = readFile(params.TEMPLATE_FILE_NAME)
+                    sh """
+                        echo "${template}" |
+                        sed 's|\$SERVER_NAME|${params.SERVER_NAME}|g' |
+                        sed 's|\$ROOT_DIRECTORY|${params.ROOT_DIRECTORY}|g' |
+                        sed 's|\$API_FORWARD_PORT|${params.API_FORWARD_PORT}|g' |
+                        sed 's|\$API_PROXY_PASS|${params.API_PROXY_PASS}|g' |
+                        sed 's|\$AUTH_FORWARD_PORT|${params.AUTH_FORWARD_PORT}|g' |
+                        sed 's|\$AUTH_PROXY_PASS|${params.AUTH_PROXY_PASS}|g' > ${params.MODIFIED_FILE_NAME}
+                        cat "${params.MODIFIED_FILE_NAME}"
+
+                    """
                 }
             }
         }
+
+        stage('copy the file to server') {
+            steps {
+                script {
+                    echo "copying the file to the target server"
+                    sh "scp -r ${params.MODIFIED_FILE_NAME} ${params.USER_NAME}@${params.TARGET_SERVER_DNS}:${params.TARGET_PATH}"
+                }
+            }
+        }
+
     }
 }
