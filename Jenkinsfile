@@ -1,42 +1,45 @@
 pipeline {
     agent {
-        label 'jenkins-slave'
+        label 'jenkins-slave2'
     }
 
     parameters {
-        string(name: 'TEMPLATE_FILE_NAME', defaultValue: '', description: '''Template File Name
+
+        string(name: 'VERSION', description: 'Explicit version to deploy (i.e., "v0.1"). Leave blank to build latest commit')
+        
+        string(name: 'TEMPLATE_FILE_NAME', defaultValue: 'dev-nginx-template.conf', description: '''Template File Name
         dev-nginx-template.conf
         butterfly-nginx-template.conf
         ''')
 
-        string(name: 'MODIFIED_FILE_NAME', defaultValue: '', description: '''Template File Name
+        string(name: 'MODIFIED_FILE_NAME', defaultValue: 'dev.conf', description: '''Template File Name
         dev.conf
         butterfly.conf''')
 
-        string(name: 'SERVER_NAME', defaultValue: '', description: '''Server Name
+        string(name: 'SERVER_NAME', defaultValue: 'dev-cca.cloud.247-inc.net', description: '''Server Name
         dev-cca.cloud.247-inc.net
         dev-cca-247ci-butterfly.cloud.247-inc.net dev-cca-247ci-bjs.cloud.247-inc.net 247ci-bjs-dev-internal.cloud.247-inc.net 247ci-omni-dev-internal.cloud.247-inc.net
         ''')
 
-        string(name: 'ROOT_DIRECTORY', defaultValue: '', description: '''Root Directory
+        string(name: 'ROOT_DIRECTORY', defaultValue: '/opt/247ci-dev-dev-frontend', description: '''Root Directory
         /opt/247ci-butterfly-dev-frontend
         /opt/247ci-dev-dev-frontend
         ''')
 
-        string(name: 'API_FORWARD_PORT', defaultValue: '', description: '''API Forwarded-Port
+        string(name: 'API_FORWARD_PORT', defaultValue: '80', description: '''API Forwarded-Port
         80
         ''')
 
-        string(name: 'API_PROXY_PASS', defaultValue: '', description: '''API Proxy Pass
+        string(name: 'API_PROXY_PASS', defaultValue: 'http://127.0.0.1:9088/api/', description: '''API Proxy Pass
         http://127.0.0.1:9089/api/
         http://127.0.0.1:9088/api/
         ''')
         
-        string(name: 'AUTH_FORWARD_PORT', defaultValue: '', description: '''AUTH Forwarded-Port
+        string(name: 'AUTH_FORWARD_PORT', defaultValue: '80', description: '''AUTH Forwarded-Port
         80
         ''')
 
-        string(name: 'AUTH_PROXY_PASS', defaultValue: '', description: '''AUTH Proxy Pass
+        string(name: 'AUTH_PROXY_PASS', defaultValue: 'https://sso-247-inc.oktapreview.com/oauth2/aus14la6k8dMmd8pn0h8', description: '''AUTH Proxy Pass
         https://sso-247-inc.oktapreview.com/oauth2/aus14la6k8dMmd8pn0h8
         https://sso-247-inc.oktapreview.com/oauth2/aus14la6k8dMmd8pn0h8
         ''')
@@ -86,14 +89,46 @@ pipeline {
             }
         }
 
-        stage('copy the file to server') {
+        stage('Deploy artifacts to Nexus & Azure') {
             steps {
                 script {
-                    echo "copying the file to the target server"
-                    sh "scp -r ${params.MODIFIED_FILE_NAME} ${params.USER_NAME}@${params.TARGET_SERVER_DNS}:${params.TARGET_PATH}"
+                    echo "Deploy artifact to Nexus & Azure !!!"
+                    def ver = params.VERSION
+
+                    sh """
+                        #!/bin/bash
+                
+                        if [ -z "$ver" ]; then
+                            artifact_version=\$(git describe --tags)
+                            echo "\${artifact_version}" > src/version.txt
+                            cd src
+                            zip -r "../az-ci-nginx-\${artifact_version}.zip" *
+                            cd $WORKSPACE
+                            echo "CREATED [az-ci-nginx-\${artifact_version}.zip]"
+                            curl -v -u deployment:deployment123 --upload-file \
+                                "az-ci-nginx-\${artifact_version}.zip" \
+                                "http://74.225.187.237:8081/repository/packages/cca/ci-config-service/az-ci-nginx-\${artifact_version}.zip"
+                        else
+                            artifact_version=$ver
+                            echo "Downloading specified artifact version from Nexus..."
+                            curl -v -u deployment:deployment123 -O "http://74.225.187.237:8081/repository/packages/cca/ci-config-service/az-ci-nginx-\${artifact_version}.zip"
+                        fi
+                        rm -rf "az-ci-nginx-\${artifact_version}"
+                        unzip "az-ci-nginx-\${artifact_version}.zip" -d "az-ci-nginx-\${artifact_version}"
+
+                    """
                 }
             }
         }
+
+        // stage('copy the file to server') {
+        //     steps {
+        //         script {
+        //             echo "copying the file to the target server"
+        //             sh "scp -r ${params.MODIFIED_FILE_NAME} ${params.USER_NAME}@${params.TARGET_SERVER_DNS}:${params.TARGET_PATH}"
+        //         }
+        //     }
+        // }
 
     }
 }
