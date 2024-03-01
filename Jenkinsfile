@@ -16,6 +16,7 @@ pipeline {
         dev.conf
         butterfly.conf''')
 
+    
         string(name: 'SERVER_NAME', defaultValue: 'dev-cca.cloud.247-inc.net', description: '''Server Name
         dev-cca.cloud.247-inc.net
         dev-cca-247ci-butterfly.cloud.247-inc.net dev-cca-247ci-bjs.cloud.247-inc.net 247ci-bjs-dev-internal.cloud.247-inc.net 247ci-omni-dev-internal.cloud.247-inc.net
@@ -73,18 +74,22 @@ pipeline {
         stage('Generate Nginx Config') {
             steps {
                 script {
-                    def template = readFile(params.TEMPLATE_FILE_NAME)
-                    sh """
-                        echo "${template}" |
-                        sed 's|\$SERVER_NAME|${params.SERVER_NAME}|g' |
-                        sed 's|\$ROOT_DIRECTORY|${params.ROOT_DIRECTORY}|g' |
-                        sed 's|\$API_FORWARD_PORT|${params.API_FORWARD_PORT}|g' |
-                        sed 's|\$API_PROXY_PASS|${params.API_PROXY_PASS}|g' |
-                        sed 's|\$AUTH_FORWARD_PORT|${params.AUTH_FORWARD_PORT}|g' |
-                        sed 's|\$AUTH_PROXY_PASS|${params.AUTH_PROXY_PASS}|g' > ${params.MODIFIED_FILE_NAME}
-                        cat "${params.MODIFIED_FILE_NAME}"
+                    // Read the template file
+                    def template = readFile('src/' + params.TEMPLATE_FILE_NAME)
+                    
+                    // Replace placeholders with actual values
+                    template = template.replaceAll('\\$SERVER_NAME', params.SERVER_NAME)
+                                    .replaceAll('\\$ROOT_DIRECTORY', params.ROOT_DIRECTORY)
+                                    .replaceAll('\\$API_FORWARD_PORT', params.API_FORWARD_PORT)
+                                    .replaceAll('\\$API_PROXY_PASS', params.API_PROXY_PASS)
+                                    .replaceAll('\\$AUTH_FORWARD_PORT', params.AUTH_FORWARD_PORT)
+                                    .replaceAll('\\$AUTH_PROXY_PASS', params.AUTH_PROXY_PASS)
 
-                    """
+                    // Write the modified template to the destination file
+                    writeFile file: "src/${params.MODIFIED_FILE_NAME}", text: template
+                    
+                    // Print the modified template
+                    echo template
                 }
             }
         }
