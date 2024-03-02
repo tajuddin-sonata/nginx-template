@@ -1,7 +1,7 @@
 copy_file_to_minion:
   file.managed:
-    - name: /opt/dev.conf  # Destination path on the minion
-    - source: salt://dev.conf  # Source path on the master
+    - name: /opt/$TARGET_FILE_NAME  # Destination path on the minion
+    - source: salt://$TARGET_FILE_NAME  # Source path on the master
     - user: root
     - group: root
     - mode: 644

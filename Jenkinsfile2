@@ -53,7 +53,7 @@ pipeline {
 
                         sed -i 's|\$TARGET_FILE_NAME|${params.MODIFIED_FILE_NAME}|g' deploy-nginx.sls
                         sudo cp deploy-nginx.sls /srv/salt
-                        sudo cp sample.sh /src/salt
+                        sudo cp sample.sh /srv/salt
 
                         sudo salt '*' state.apply deploy-nginx
 
