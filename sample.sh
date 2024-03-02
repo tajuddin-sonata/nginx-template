@@ -7,7 +7,7 @@ df -h
 echo "create a directory"
 
 
-directory="directory1"
+directory="/opt/directory1"
 
 if [ -d "$directory" ]; then
     echo "Directory $directory already exists. Removing it..."
