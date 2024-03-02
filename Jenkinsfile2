@@ -1,0 +1,88 @@
+pipeline {
+    agent {
+        label 'jenkins-slave2'
+    }
+
+    parameters {
+
+        string(name: 'VERSION', description: 'Explicit version to deploy (i.e., "v0.1"). Leave blank to build latest commit')
+        
+        string(name: 'MODIFIED_FILE_NAME', defaultValue: 'dev.conf', description: '''Template File Name
+        dev.conf
+        butterfly.conf''')
+    }
+
+    // environment {
+    //     TEMPLATE_FILE = "${params.TEMPLATE_FILE_NAME}"
+    //     MODIFIED_FILE = "${params.MODIFIED_FILE_NAME}"
+    // }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'master', url: 'https://github.com/tajuddin-sonata/nginx-template.git'
+            }
+        }
+
+        
+        stage('Download artifacts') {
+            steps {
+                script {
+                    echo "Download artifacts !!!"
+                    def ver = params.VERSION
+
+                    sh """
+                        #!/bin/bash
+                
+                        if [ -z "$ver" ]; then
+                            artifact_version=\$(git describe --tags)
+                            echo "\${artifact_version}"
+                            curl -v -u deployment:deployment123 -O "http://74.225.187.237:8081/repository/packages/cca/ci-config-service/az-ci-nginx-\${artifact_version}.zip"
+                        else
+                            artifact_version=$ver
+                            echo "Downloading specified artifact version from Nexus..."
+                            curl -v -u deployment:deployment123 -O "http://74.225.187.237:8081/repository/packages/cca/ci-config-service/az-ci-nginx-\${artifact_version}.zip"
+                        fi
+                        rm -rf "az-ci-nginx-\${artifact_version}"
+                        unzip "az-ci-nginx-\${artifact_version}.zip" -d "az-ci-nginx-\${artifact_version}"
+
+                        cd az-ci-nginx-\${artifact_version}
+                        sudo cp ${params.MODIFIED_FILE_NAME} /srv/salt
+                        cd $WORKSPACE
+
+                        sed -i 's|\$TARGET_FILE_NAME|${params.MODIFIED_FILE_NAME}|g' deploy-nginx.sls
+                        sudo cp deploy-nginx.sls /srv/salt
+                        sudo cp sample.sh /src/salt
+
+                        sudo salt '*' state.apply deploy-nginx
+
+                    """
+                }
+            }
+        }
+
+    }
+}
+
+
+copy_directory_to_minion:
+  file.recurse:
+    - name: /opt/az-ci-nginx-v0.2-7-gcfe1963  # Destination path on the minion
+    - source: salt://az-ci-nginx-v0.2-7-gcfe1963  # Source path on the master
+    - user: root
+    - group: root
+    - dir_mode: 755
+    - file_mode: 644
+
+
+
+
+copy_file_to_minion:
+  file.managed:
+    - name: /opt/dev.conf  # Destination path on the minion
+    - source: salt://var/lib/jenkins/workspace/nginx-deployment/az-ci-nginx-v0.2-7-gcfe1963/dev.conf  # Source path on the master
+    - user: root
+    - group: root
+    - mode: 644
+    - makedirs: true  # Create parent directories if they don't exist
